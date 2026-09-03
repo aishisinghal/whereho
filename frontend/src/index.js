@@ -1,3 +1,5 @@
+import 'react-app-polyfill/stable';
+import 'whatwg-fetch';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
