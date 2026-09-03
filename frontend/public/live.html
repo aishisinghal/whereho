@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Whereहो — Live view</title>
+  <style>body{font-family:system-ui, -apple-system, 'Segoe UI', Roboto, Arial;margin:0;padding:0}#map{width:100%;height:100vh}</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+  <script>
+    // Read token from query string: ?token=abcd
+    function qs(name) { const params = new URLSearchParams(window.location.search); return params.get(name); }
+    const token = qs('token');
+    if (!token) {
+      document.body.innerHTML = '<div style="padding:24px">Missing token in query. Use ?token=...</div>';
+      throw new Error('no token');
+    }
+    // Fetch journey info from backend
+    (async function() {
+      try {
+        const res = await fetch((window.__BACKEND_URL__ || '') + '/live/' + token);
+        if (!res.ok) {
+          document.body.innerHTML = '<div style="padding:24px">Invalid or expired link</div>';
+          return;
+        }
+        const data = await res.json();
+        const journeyId = data.journeyId;
+        const userName = data.userName;
+        // load Google Maps script dynamically
+        const key = '__GMAP_KEY__'; // replaced by server-side build if needed; instruct users to replace if local
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+        script.onload = () => {
+          initMap(journeyId, userName);
+        };
+        document.head.appendChild(script);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+
+    function initMap(journeyId, userName) {
+      const map = new google.maps.Map(document.getElementById('map'), { center: {lat:20.5937, lng:78.9629}, zoom: 5 });
+      const marker = new google.maps.Marker({ map, title: userName });
+      const SOCKET_URL = (window.__BACKEND_URL__ || 'http://localhost:4000');
+      const socket = io(SOCKET_URL, { transports: ['websocket'] });
+      socket.on('connect', () => {
+        socket.emit('joinJourney', { journeyId });
+      });
+      socket.on('locationUpdate', (loc) => {
+        if (!loc) return;
+        if (loc.lat && loc.lng) {
+          const ll = { lat: loc.lat, lng: loc.lng };
+          marker.setPosition(ll);
+          map.setCenter(ll);
+          map.setZoom(15);
+        }
+      });
+      // initial poll to backend to populate position if available
+      fetch((window.__BACKEND_URL__ || 'http://localhost:4000') + '/live/' + token).then(r => r.json()).then(d => {
+        if (d.location) {
+          const ll = { lat: d.location.lat, lng: d.location.lng };
+          marker.setPosition(ll);
+          map.setCenter(ll);
+          map.setZoom(15);
+        }
+      }).catch(console.error);
+    }
+  </script>
+</body>
+</html>

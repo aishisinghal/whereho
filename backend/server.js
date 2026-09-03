@@ -74,9 +74,11 @@ app.post('/api/sos', async (req, res) => {
     const { userId = 'demo_user', userName = 'Demo User', journeyId } = req.body; // in prod, get from auth
     const loc = journeyId ? liveLocations[journeyId] : null;
     const token = createLiveToken({ journeyId: journeyId || `journey-${Date.now()}`, userName });
-    const liveUrl = `${process.env.APP_URL || 'http://localhost:4000'}/live/${token}`;
+    const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000';
+    const liveUrlFrontend = `${frontendUrl.replace(/\/$/, '')}/live.html?token=${token}`;
+    const liveUrlBackend = `${process.env.APP_URL || 'http://localhost:4000'}/live/${token}`;
     const gmap = loc ? `https://www.google.com/maps?q=${loc.lat},${loc.lng}` : 'Location unavailable';
-    const message = `${userName} is in emergency. Live: ${liveUrl} (Google Maps: ${gmap})`;
+    const message = `${userName} is in emergency. Live: ${liveUrlFrontend} (Google Maps: ${gmap})`;
 
     const contacts = trustedContacts.get(userId) || [];
     const sendResults = [];
@@ -88,14 +90,14 @@ app.post('/api/sos', async (req, res) => {
     }
 
     // optionally trigger email via Gmail here
-    res.json({ ok: true, dial: 'tel:100', sent: sendResults });
+    res.json({ ok: true, dial: 'tel:100', sent: sendResults, liveLink: liveUrlFrontend, backendLink: liveUrlBackend });
   } catch (err) {
     console.error('sos error', err);
     res.status(500).json({ ok: false, error: String(err) });
   }
 });
 
-// Start journey endpoint: create journeyId, store, and notify trusted contacts
+// Start journey endpoint: create journeyId, store, and notify trusted contacts (with live link)
 app.post('/api/journeys/start', async (req, res) => {
   try {
     const { userId = 'demo_user', userName = 'Demo User', route, origin, destination } = req.body;
@@ -106,9 +108,14 @@ app.post('/api/journeys/start', async (req, res) => {
 
     journeys.set(journeyId, { userId, userName, route, origin, destination, startedAt, eta });
 
+    // create live token and frontend link
+    const token = createLiveToken({ journeyId, userName, ttlSeconds: 60*60 });
+    const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000';
+    const liveUrlFrontend = `${frontendUrl.replace(/\/$/, '')}/live.html?token=${token}`;
+    const startMsg = `${userName} has started the journey from ${origin && origin.lat ? `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}` : origin || 'unknown'} to ${destination && destination.lat ? `${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}` : destination || 'unknown'} and will reach by ${eta || 'unknown'}. Live: ${liveUrlFrontend}`;
+
     // Notify trusted contacts
     const contacts = trustedContacts.get(userId) || [];
-    const startMsg = `${userName} has started the journey from ${origin && origin.lat ? `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}` : origin || 'unknown'} to ${destination && destination.lat ? `${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}` : destination || 'unknown'} and will reach by ${eta || 'unknown'}`;
     const sendResults = [];
     for (const c of contacts) {
       if (c.phone) {
@@ -117,7 +124,7 @@ app.post('/api/journeys/start', async (req, res) => {
       }
     }
 
-    res.json({ ok: true, journeyId, sent: sendResults });
+    res.json({ ok: true, journeyId, liveLink: liveUrlFrontend, sent: sendResults });
   } catch (err) {
     console.error('start journey error', err);
     res.status(500).json({ ok: false, error: String(err) });
