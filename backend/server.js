@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -23,6 +22,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 const liveLocations = {}; // journeyId -> { lat, lng, updatedAt }
 const tokens = new Map(); // token -> { journeyId, userName, expiresAt }
 const trustedContacts = new Map(); // userId -> [{ name, phone, email }]
+const journeys = new Map(); // journeyId -> { userId, route, origin, destination, startedAt, eta }
 
 // Simple health check
 app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -95,11 +95,41 @@ app.post('/api/sos', async (req, res) => {
   }
 });
 
+// Start journey endpoint: create journeyId, store, and notify trusted contacts
+app.post('/api/journeys/start', async (req, res) => {
+  try {
+    const { userId = 'demo_user', userName = 'Demo User', route, origin, destination } = req.body;
+    if (!route) return res.status(400).json({ error: 'route required' });
+    const journeyId = `journey-${uuidv4().slice(0,8)}`;
+    const startedAt = Date.now();
+    const eta = route.duration ? new Date(startedAt + route.duration * 1000).toISOString() : null;
+
+    journeys.set(journeyId, { userId, userName, route, origin, destination, startedAt, eta });
+
+    // Notify trusted contacts
+    const contacts = trustedContacts.get(userId) || [];
+    const startMsg = `${userName} has started the journey from ${origin && origin.lat ? `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}` : origin || 'unknown'} to ${destination && destination.lat ? `${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}` : destination || 'unknown'} and will reach by ${eta || 'unknown'}`;
+    const sendResults = [];
+    for (const c of contacts) {
+      if (c.phone) {
+        const r = await sendSms(c.phone, startMsg);
+        sendResults.push({ to: c.phone, result: r });
+      }
+    }
+
+    res.json({ ok: true, journeyId, sent: sendResults });
+  } catch (err) {
+    console.error('start journey error', err);
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 // Expose some internals for route handlers (for prototype only)
 app.set('liveLocations', liveLocations);
 app.set('trustedContacts', trustedContacts);
 app.set('createLiveToken', createLiveToken);
 app.set('sendSms', sendSms);
+app.set('journeys', journeys);
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`Backend running on ${PORT}`));

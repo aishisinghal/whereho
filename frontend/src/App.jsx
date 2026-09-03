@@ -1,46 +1,58 @@
-import React, { useEffect } from 'react';
-import io from 'socket.io-client';
+import React, { useEffect, useState } from 'react';
+import RouteMap from './components/RouteMap';
+import RouteList from './components/RouteList';
 
-function SOSButton({ journeyId }) {
-  const onSOS = async () => {
-    // discreet verification can be added here (WebAuthn or PIN)
+export default function App() {
+  const [routes, setRoutes] = useState([]);
+  const [selectedLabel, setSelectedLabel] = useState(null);
+  const [journeyId, setJourneyId] = useState(null);
+
+  // example origin/destination: replace with Places autocomplete UI later
+  const origin = { lat: 28.7041, lng: 77.1025 }; // Delhi
+  const destination = { lat: 28.5355, lng: 77.3910 }; // Noida
+
+  useEffect(() => {
+    // load Google Maps script dynamically
+    if (!window.google) {
+      const s = document.createElement('script');
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&libraries=places,geometry`;
+      s.async = true;
+      document.head.appendChild(s);
+      return () => { document.head.removeChild(s); };
+    }
+  }, []);
+
+  const handleRoutes = (rs, sel) => {
+    setRoutes(rs || []);
+    if (sel) setSelectedLabel(sel);
+  };
+
+  const handleStart = async (selectedRoute) => {
     try {
-      const res = await fetch('/api/sos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ journeyId, userId: 'demo_user', userName: 'Demo User' }) });
+      const body = { userId: 'demo_user', userName: 'Demo User', route: selectedRoute, origin, destination };
+      const res = await fetch('/api/journeys/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
-      console.log('SOS result', data);
-      // open phone dialer for 100
-      window.location.href = 'tel:100';
+      if (data.journeyId) {
+        setJourneyId(data.journeyId);
+        alert(`Journey started: ${data.journeyId}`);
+      } else {
+        console.error('start journey failed', data);
+      }
     } catch (err) { console.error(err); }
   };
 
   return (
-    <button onClick={onSOS} style={{ position: 'fixed', bottom: 24, right: 24, background: 'red', color: 'white', padding: 16, borderRadius: 12, fontSize: 18 }}>I feel unsafe</button>
-  );
-}
-
-export default function App() {
-  useEffect(() => {
-    // load Google Maps script dynamically (requires GOOGLE_MAPS_API_KEY in env during build)
-    const s = document.createElement('script');
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&libraries=places`;
-    s.async = true;
-    document.head.appendChild(s);
-    return () => { document.head.removeChild(s); };
-  }, []);
-
-  // demo: connect socket to receive live location updates for a demo journey
-  useEffect(() => {
-    const socket = io('/', { path: '/socket.io' });
-    socket.emit('joinJourney', { journeyId: 'demo-journey' });
-    socket.on('locationUpdate', (loc) => console.log('live loc', loc));
-    return () => socket.disconnect();
-  }, []);
-
-  return (
     <div>
-      <h1>Whereहो (demo)</h1>
-      <p>Prototype frontend. Map and routing UI will be added here. The SOS button is visible at bottom-right.</p>
-      <SOSButton journeyId={'demo-journey'} />
+      <h1>Whereहो — Routes</h1>
+      <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <RouteList initialOrigin={origin} initialDestination={destination} onRoutes={handleRoutes} onStart={handleStart} />
+          {journeyId && <div style={{ marginTop: 12 }}><strong>Active journey:</strong> {journeyId}</div>}
+        </div>
+        <div style={{ flex: 2 }}>
+          <RouteMap center={origin} routes={routes} selectedLabel={selectedLabel} onSelect={(label) => setSelectedLabel(label)} />
+        </div>
+      </div>
     </div>
   );
 }

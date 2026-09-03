@@ -1,0 +1,4 @@
+/* Minimal styles */
+body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin: 0; padding: 16px; }
+#root { max-width: 1000px; margin: 0 auto; }
+button { cursor: pointer; }
