@@ -12,6 +12,10 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// Mount directions/routes handler
+const directionsRouter = require('./routes/directions');
+app.use('/api', directionsRouter);
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
@@ -90,6 +94,12 @@ app.post('/api/sos', async (req, res) => {
     res.status(500).json({ ok: false, error: String(err) });
   }
 });
+
+// Expose some internals for route handlers (for prototype only)
+app.set('liveLocations', liveLocations);
+app.set('trustedContacts', trustedContacts);
+app.set('createLiveToken', createLiveToken);
+app.set('sendSms', sendSms);
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`Backend running on ${PORT}`));
